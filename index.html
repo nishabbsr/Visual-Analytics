@@ -1,0 +1,18 @@
+<head>
+    <style> body { margin: 0; } </style>
+  
+    <script src="https://unpkg.com/d3-dsv@3.0.1/dist/d3-dsv.min.js"></script>
+    <script src="https://unpkg.com/3d-force-graph@1.70.5/dist/3d-force-graph.min.js"></script>
+  </head>
+  
+  <body>
+    <div id="3d-graph"></div>
+  
+    <script>
+      const Graph = ForceGraph3D()
+        (document.getElementById('3d-graph'))
+          .jsonUrl('miserable_pr.json')
+          .nodeLabel('id')
+          .nodeAutoColorBy('value');
+    </script>
+  </body>
