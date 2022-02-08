@@ -1,0 +1,232 @@
+<!-- This Code that I am submitting has ben referenced from d3-graph-gallery.com website-->
+
+<html>
+
+<head>
+    <!-- <script src="https://unpkg.com/d3-dsv@3.0.1/dist/d3-dsv.min.js"></script> -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <script>
+        function getStats(data, column) {
+
+            if (data.length == 1) {
+                return [data[0][column], 0.0]
+            }
+
+            let mean = 0;
+            data.forEach(row => {
+                // console.log(parseInt(row[column]));
+                mean = mean + parseFloat(row[column]);
+            });
+            mean = mean / data.length;
+
+            let std = 0.0
+            data.forEach(row => {
+                std = std + Math.pow(parseFloat(row[column]) - mean, 2);
+            });
+            std = Math.sqrt(std / data.length);
+
+            return [mean, std];
+        }
+
+
+        function getBuckets(data, column, mean, std) {
+            // let bucket_ranges = new Set():
+            let bucket_ids = [];
+
+
+            data.forEach(row => {
+                let val = parseInt(row[column]);
+
+                if (val < mean) {
+                    for (let i = 0; i < 1000; ++i) {
+                        let start = mean - ((i + 1) * std);
+                        let end = mean - (i * std);
+
+                        start = Math.round(start * 10000) / 10000;
+                        end = Math.round(end * 10000) / 10000;
+
+                        if (val >= start && val < end) {
+                            let bucket = [start, end]
+                            // multiply by -1 since we are probing the left side of mean
+                            // otherwise the ids will clash with right side probe
+                            bucket_ids.push(bucket);
+                            break;
+                        }
+                    }
+                }
+
+                else if (val > mean) {
+                    for (let i = 0; i < 1000; ++i) {
+                        let start = mean + (i * std);
+                        let end = mean + (i + 1) * std;
+
+                        start = Math.round(start * 10000) / 10000;
+                        end = Math.round(end * 10000) / 10000;
+
+                        if (val >= start && val < end) {
+                            let bucket = [start, end]
+                            bucket_ids.push(bucket);
+                            break;
+                        }
+                    }
+                }
+
+                else {
+                    mean = Math.round(mean * 10000) / 10000;
+                    let bucket = [mean, mean + 1];
+                    bucket_ids.push(bucket);
+                }
+
+            });
+
+            // make everything a string for proper hashability of buckets later
+            return bucket_ids.map(x => JSON.stringify(x));
+        }
+
+
+
+        function partition(node, column) {
+            let data = node.local_data;
+            let [mean, std] = getStats(data, column);
+            let buckets = getBuckets(data, column, mean, std);
+            let unique_buckets = new Set(buckets);
+
+            unique_buckets.forEach(x => {
+                let child_node = {
+                    "name": column + " : " + x,
+                    "local_data": [],
+                    "children": []
+                }
+
+                for (let i = 0; i < data.length; ++i) {
+                    let bucket = buckets[i];
+                    if (bucket === x) {
+                        child_node.local_data.push(data[i]);
+                    }
+                }
+
+                node.children.push(child_node);
+            });
+
+            return node;
+        }
+
+
+        function recursiveBuild(data) {
+            let columns = ['degree', 'diversity', 'betweenness'];
+            let frontier = [];
+
+            let node = { 'name': 'all', 'children': [], 'local_data': data };
+            partition(node, 'degree');
+
+            node.children.forEach(c => {
+                frontier.push(c);
+            });
+
+            for (let i = 1; i < columns.length; ++i) {
+                // get next column name
+                let column = columns[i];
+                // partition each node in the frontier against the new column
+                frontier.forEach(n => {
+                    partition(n, column);
+                });
+                // update hthe frontier array with new child nodes
+                let n = frontier.length;
+                for (let i = 0; i < n; ++i) {
+                    let frontier_node = frontier.shift();
+                    frontier_node.children.forEach(c => {
+                        frontier.push(c);
+                    });
+                }
+
+            }
+
+            const hierarchy = d3.hierarchy(node)
+                .sum(d => d.local_data.length)  //sums every child values
+                .sort((a, b) => b.value - a.value);
+
+            const treemap = d3.treemap()
+                .size([1800, 1800])
+                // .paddingOuter(3)
+                // .paddingTop(19)
+                // .paddingInner(1)
+                .round(true)
+                .padding(19);
+
+            const root = treemap(hierarchy);
+            console.log(hierarchy);
+
+
+            const svg = d3.select("svg")
+                .attr("viewBox", [0, 0, 1800, 1800])
+                .style("font", "10px sans-serif");
+
+            // const shadow = DOM.uid("shadow");
+
+            const asd = svg.selectAll("g")
+                .data(d3.group(root, d => d.height))
+                .join("g")
+                .attr("filter", 'shadow')
+                .selectAll("g")
+                .data(d => d[1])
+                .join("g")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+
+
+            let color = d3.scaleSequential([7, 0], d3.interpolateMagma)
+
+            asd.append("rect")
+                .attr("id", d => (d.nodeUid = "id" + Math.random().toString(32).slice(2)).id)
+                .attr("fill", d => color(d.height))
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0);
+
+
+            asd.append("text")
+                .attr("clip-path", d => d.clipUid)
+                // .selectAll("tspan")
+                // .data(d => d.data.name)
+                // .join("tspan")
+                // .attr("fill-opacity", (d, i, nodes) => i === nodes.length - 1 ? 0.7 : null)
+                .text(d => d.data.name);
+
+            asd.filter(d => d.children).selectAll("text")
+                .attr("dx", 3)
+                .attr("y", 13);
+
+            asd.filter(d => !d.children).selectAll("text")
+                .attr("x", 3)
+                .attr("y", (d, i, nodes) => `${(i === nodes.length - 1) * 0.3 + 1.1 + i * 0.9}em`);
+
+            // console.log(asd);
+
+
+
+        }
+
+        function process() {
+
+            var data = document.getElementById('node_prop').files[0].text()
+                          .jsonUrl('miserable_pr1.json')
+                .then(d3.csvParse)
+                .then(data => recursiveBuild(data));
+
+        }
+
+    </script>
+</head>
+
+<body>
+    <label for="node_prop">Select the asoiaf_nodes_prop.csv file:</label><br>
+    <input type="file" id="node_prop" name='node_prop' />
+    <hr>
+    <button onclick="process()">Generate graph</button>
+    <hr>
+    <svg>
+
+    </svg>
+</body>
+
+</html>
